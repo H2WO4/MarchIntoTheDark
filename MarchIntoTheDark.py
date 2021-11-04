@@ -1,6 +1,6 @@
 # Imports
 from __future__ import annotations
-from typing import List, Tuple
+from typing import Dict, List, Tuple
 
 import pygame
 from pygame.event import Event
@@ -16,13 +16,14 @@ class RoomType:
 	"""
 	The RoomType class define a specific type of room.
 	"""
-	listAll: List[RoomType] = []
+	listAll: Dict[str, RoomType] = {}
 
-	def __init__(self, name: str, color: Color) -> None:
+	def __init__(self, name: str, color: Color, special: bool = False) -> None:
 		self.name = name
 		self.color = color
+		self.special = special
 
-		RoomType.listAll.append(self)
+		RoomType.listAll[name] = self
 
 class Room:
 	"""
@@ -45,37 +46,46 @@ class Room:
 		"""
 		Render the room on the given surface.
 		"""
-		pygame.draw.rect(surface, self.type.color, (20 * self.x, 20 * self.y, 20, 20), 0)
+		pygame.draw.rect(surface, self.type.color, (surface.get_width() // 2 + 30 * self.x, surface.get_height() // 2 + 30 * self.y, 20, 20), 0)
 
 	@staticmethod
 	def randomRoom(x: int, y: int) -> Room:
 		"""
 		Create a random room with the given position.
 		"""
-		return Room(random.choice(RoomType.listAll), (x, y))
+		return Room(random.choice([type for type in RoomType.listAll.values() if not type.special]), (x, y))
 
 
 class Dungeon:
 	"""
-	The Dungeon class define a dungeon.
+	The Dungeon class define a dungeon.\n
+	It is a collection of rooms.
 	"""
-	def __init__(self, size: Tuple[int, int]) -> None:
+	activeDungeon: Dungeon = None # type: ignore
+
+	def __init__(self, x: int, y: int) -> None:
 		"""
 		Create a dungeon of the given size.
 		"""
-		self.size = size
-		self.rooms: List[Room] = []
+		self.x, self.y = x, y
+		self.rooms: Dict[int, Dict[int, Room]] = {}
 
-		for x in range(self.size[0]):
-			for y in range(self.size[1]):
-				self.rooms.append(Room.randomRoom(x, y))
+		for i in range(-x, x+1):
+			self.rooms[i] = {}
+			for j in range(-y, y+1):
+				self.rooms[i][j] = Room.randomRoom(i, j)
+
+		self.rooms[0][0].type = RoomType.listAll["Entrance"]
+
+		Dungeon.activeDungeon = self
 
 	def render(self, surface: Surface) -> None:
 		"""
 		Render the dungeon on the given surface.
 		"""
-		for room in self.rooms:
-			room.render(surface)
+		for line in self.rooms.values():
+			for room in line.values():
+				room.render(surface)
 
 
 
@@ -85,7 +95,7 @@ class Dungeon:
 class Instance:
 	def __init__(self) -> None:
 		self._running = True
-		self.size = self.weight, self.height = 640, 400
+		self.size = self.weight, self.height = 900, 600
 		self._display_surf = pygame.display.set_mode(self.size, pygame.HWSURFACE | pygame.DOUBLEBUF)
 		pygame.display.set_caption('March Into The Dark')
 
@@ -125,9 +135,7 @@ class Instance:
 	def on_render(self) -> None:
 		self._display_surf.fill((0, 0, 0))
 
-
-		for room in Room.listAll:
-			room.render(self._display_surf)
+		Dungeon.activeDungeon.render(self._display_surf)
 		
 		pygame.display.update()
 
@@ -153,7 +161,12 @@ if __name__ == "__main__":
 	MarchIntoTheDark = Instance()
 	pygame.time.Clock().tick(30)
 
-	Basic = RoomType("Basic", (255, 0, 0))
-	Test = Room(Basic, (0, 0))
+	BasicType = RoomType("Basic", (255, 255, 255))
+	FloodedType = RoomType("Flooded", (0, 0, 255))
+	PoisonedType = RoomType("Poisoned", (0, 255, 0))
+
+	EntranceType = RoomType("Entrance", (255, 255, 0), True)
+
+	A = Dungeon(5, 5)
 
 	MarchIntoTheDark.on_execute()
