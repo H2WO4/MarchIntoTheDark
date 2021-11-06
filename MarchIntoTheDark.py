@@ -34,6 +34,8 @@ class RoomType:
 	listAll: Dict[str, RoomType] = {}
 	weights: Dict[RoomType, float] = {}
 
+	basicType: RoomType
+
 	def __init__(self, name: str, color: Color, weight: float = 0) -> None:
 		self.name = name
 		self.color = color
@@ -68,7 +70,7 @@ class Room:
 	# Define the list of all rooms
 	listAll: List[Room] = []
 
-	def __init__(self, type: RoomType | None, pos: Tuple[int, int]) -> None:
+	def __init__(self, type: RoomType, pos: Tuple[int, int]) -> None:
 		"""
 		Create a room with the given type and position.
 		"""
@@ -88,19 +90,16 @@ class Room:
 		# If the room is the current room, render the current room symbol
 		if self.x == 0 and self.y == 0:
 			pygame.draw.rect(surface, (255, 0, 0), (surface.get_width() // 2 + 30 * self.x - 10, surface.get_height() // 2 + 30 * self.y - 10, 30, 30), 0)
-		
-		# Obtain the color of the room, defaults to white
-		color = self.type.color if self.type else (255, 255, 255)
 
 		# Draw the room at its position, with the given color
-		pygame.draw.rect(surface, color, (surface.get_width() // 2 + 30 * self.x - 5, surface.get_height() // 2 + 30 * self.y - 5, 20, 20), 0)
+		pygame.draw.rect(surface, self.type.color, (surface.get_width() // 2 + 30 * self.x - 5, surface.get_height() // 2 + 30 * self.y - 5, 20, 20), 0)
 
 	@staticmethod
-	def blankRoom(x: int, y: int) -> Room:
+	def basicRoom(x: int, y: int) -> Room:
 		"""
 		Create a blank room at the given position.
 		"""
-		return Room(None, (x, y))
+		return Room(RoomType.basicType, (x, y))
 
 
 # Define all the objects pertaining to the Dungeon
@@ -120,7 +119,7 @@ class Dungeon:
 		self.rooms: Dict[Tuple[int, int], Room] = {}
 
 		# Add the entrance
-		self.rooms[0, 0] = Room(RoomType.getType("Entrance"), (0, 0))
+		self.rooms[0, 0] = Room.basicRoom(0, 0)
 
 		# Special case for the entrance
 		for direction in range(4):
@@ -128,7 +127,7 @@ class Dungeon:
 			vX, vY = dirNumToVector(direction)
 
 			# Create the new room, and add it to the dungeon
-			newRoom = Room.blankRoom(vX, vY)
+			newRoom = Room.basicRoom(vX, vY)
 			self.rooms[vX, vY] = newRoom
 
 			# Set its neighbor count
@@ -160,7 +159,7 @@ class Dungeon:
 				# If there would only be one neighbor, and the new room is not already in the dungeon, add it
 				if len(neighbors) == 1 and (nX, nY) not in self.rooms:
 					# Create the new room, and add it to the dungeon
-					newRoom = Room.blankRoom(nX, nY)
+					newRoom = Room.basicRoom(nX, nY)
 					self.rooms[nX, nY] = newRoom
 
 					# Set its neighbor count
@@ -174,6 +173,14 @@ class Dungeon:
 					i += 1
 					break
 		
+		# Set up the central room as the entrance
+		self.rooms[0, 0].type = RoomType.getType("Entrance")
+
+		# Generate the special rooms
+		for room in [r for r in self.rooms.values() if r.neighborCount == 1]:
+			# Set the room type to a random room type
+			room.type = RoomType.getRandomType()
+
 		# Define this dungeon as the active dungeon
 		Dungeon.activeDungeon = self
 
@@ -255,18 +262,26 @@ class Instance:
 
 # Main
 if __name__ == "__main__":
+	# Create the game instance
 	MarchIntoTheDark = Instance()
+	# Set up the FPS clock
 	pygame.time.Clock().tick(30)
 
-	EntranceType = RoomType("Entrance", (200, 200, 0))
-	BasicType = RoomType("Basic", (200, 200, 200))
+	# Define unique room types
+	EntranceType = RoomType("Entrance", (255, 255, 0))
 
+	# Define the basic room type
+	BasicType = RoomType("Basic", (255, 255, 255), 3)
+	RoomType.basicType = BasicType
+
+	# Define the special room types
 	LibraryType = RoomType("Library", (0, 200, 0), 1)
 	PlanetariumType = RoomType("Planetarium", (0, 200, 200), 1)
 	LabType = RoomType("Lab", (200, 0, 0), 1)
 	GreenhouseType = RoomType("Greenhouse", (200, 0, 200), 1)
 	
+	# Create the dungeon
+	A = Dungeon(100)
 
-	A = Dungeon(30)
-
+	# Run the game
 	MarchIntoTheDark.on_execute()
