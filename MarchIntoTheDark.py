@@ -6,7 +6,7 @@ import pygame
 from pygame.event import Event
 from pygame.surface import Surface
 
-from random import choice, choices, randint
+from random import choice, choices, shuffle
 
 # Define types
 Color = Tuple[int, int, int] | Tuple[int, int, int, int]
@@ -26,7 +26,7 @@ def dirNumToVector(dirNum: int) -> Tuple[int, int]:
 			raise ValueError(f"Invalid direction number: {dirNum}")
 
 
-
+# Define all the objects pertaining to the Rooms
 class RoomType:
 	"""
 	The RoomType class define a specific type of room.
@@ -41,78 +41,140 @@ class RoomType:
 		RoomType.listAll[name] = self
 		RoomType.weights[self] = weight
 
+	@classmethod
+	def getType(cls, name: str) -> RoomType:
+		"""
+		Return the RoomType with the given name.
+		"""
+		return cls.listAll[name]
+
+	@classmethod
+	def getRandomType(cls) -> RoomType:
+		"""
+		Return a random room type.
+		"""
+		# Obtain a random room type
+		typeList = list(cls.listAll.values())
+		weightList = [cls.weights[t] for t in typeList]
+
+		return choices(typeList, weightList)[0]
+
 class Room:
 	"""
 	The Room class define a room of the dungeon.\n
 	A room is an atom of the dungeon.\n
 	It require a certain type, a RoomType, to know how to act.
 	"""
+	# Define the list of all rooms
 	listAll: List[Room] = []
 
-	def __init__(self, type: RoomType, pos: Tuple[int, int]) -> None:
+	def __init__(self, type: RoomType | None, pos: Tuple[int, int]) -> None:
 		"""
 		Create a room with the given type and position.
 		"""
+		# Set the room type, and position
 		self.type = type
 		self.x, self.y = pos
 
-		self.neighbors: List[Room | None] = [None, None, None, None]
-		self.nNeighbors = 0
+		self.neighborCount = 0
 
+		# Add the room to the list of all rooms
 		Room.listAll.append(self)
 	
 	def render(self, surface: Surface) -> None:
 		"""
 		Render the room on the given surface.
 		"""
+		# If the room is the current room, render the current room symbol
 		if self.x == 0 and self.y == 0:
 			pygame.draw.rect(surface, (255, 0, 0), (surface.get_width() // 2 + 30 * self.x - 10, surface.get_height() // 2 + 30 * self.y - 10, 30, 30), 0)
 		
-		pygame.draw.rect(surface, self.type.color, (surface.get_width() // 2 + 30 * self.x - 5, surface.get_height() // 2 + 30 * self.y - 5, 20, 20), 0)
+		# Obtain the color of the room, defaults to white
+		color = self.type.color if self.type else (255, 255, 255)
+
+		# Draw the room at its position, with the given color
+		pygame.draw.rect(surface, color, (surface.get_width() // 2 + 30 * self.x - 5, surface.get_height() // 2 + 30 * self.y - 5, 20, 20), 0)
 
 	@staticmethod
-	def randomRoom(x: int, y: int) -> Room:
+	def blankRoom(x: int, y: int) -> Room:
 		"""
-		Create a random room with the given position.
+		Create a blank room at the given position.
 		"""
-		typeList = list(RoomType.listAll.values())
-		weightList = [RoomType.weights[t] for t in typeList]
-		return Room(choices(typeList, weightList)[0], (x, y))
+		return Room(None, (x, y))
 
 
+# Define all the objects pertaining to the Dungeon
 class Dungeon:
 	"""
 	The Dungeon class define a dungeon.\n
 	It is a collection of rooms.
 	"""
+	# Define a way to obtain the currently active dungeon
 	activeDungeon: Dungeon
 
 	def __init__(self, size: int) -> None:
 		"""
 		Create a dungeon of the given size.
 		"""
+		# Create the dungeon
 		self.rooms: Dict[Tuple[int, int], Room] = {}
 
-		self.rooms[0, 0] = Room(RoomType.listAll["Entrance"], (0, 0))
+		# Add the entrance
+		self.rooms[0, 0] = Room(RoomType.getType("Entrance"), (0, 0))
 
+		# Special case for the entrance
+		for direction in range(4):
+			# Convert the direction to a vector
+			vX, vY = dirNumToVector(direction)
+
+			# Create the new room, and add it to the dungeon
+			newRoom = Room.blankRoom(vX, vY)
+			self.rooms[vX, vY] = newRoom
+
+			# Set its neighbor count
+			newRoom.neighborCount = 1
+
+		# Set the number of neighbors of the entrance
+		self.rooms[0, 0].neighborCount = 4
+
+		# While the dungeon is not full, or the pity is not too high
 		i = 0
-		pity = 0
 		while i < size:
+			# Get a random room
 			baseRoom = choice(list(self.rooms.values()))
-			if baseRoom.nNeighbors < 3:
-				direction = randint(0, 3)
-				if baseRoom.neighbors[direction] is None:
-					nX, nY = dirNumToVector(direction)
-					newRoom = Room.randomRoom(baseRoom.x + nX, baseRoom.y + nY)
-					self.rooms[newRoom.x, newRoom.y] = newRoom
 
-					baseRoom.neighbors[direction] = newRoom
-					newRoom.neighbors[(direction + 2) % 4] = baseRoom
+			# Get a list of all the possible directions, and shuffle it
+			directionList = list(range(4))
+			shuffle(directionList)
 
-					baseRoom.nNeighbors += 1
+			# For each direction in the list
+			for direction in directionList:
+				# Convert the direction to a vector, and use them to obtain the coordinates of the new room
+				vX, vY = dirNumToVector(direction)
+				nX, nY = baseRoom.x + vX, baseRoom.y + vY
+
+				# Obtain the list of neighbors the new room would have
+				neighbors = [self.rooms.get((nX + x, nY + y)) for x, y in (dirNumToVector(d) for d in range(4))]
+				neighbors = [n for n in neighbors if n]
+
+				# If there would only be one neighbor, and the new room is not already in the dungeon, add it
+				if len(neighbors) == 1 and (nX, nY) not in self.rooms:
+					# Create the new room, and add it to the dungeon
+					newRoom = Room.blankRoom(nX, nY)
+					self.rooms[nX, nY] = newRoom
+
+					# Set its neighbor count
+					newRoom.neighborCount = 1
+
+					for room in neighbors:
+						# Increase the neighbor count of the neighbor
+						room.neighborCount += 1
+
+					# Increment the number of rooms generated, and break the loop
 					i += 1
+					break
 		
-		
+		# Define this dungeon as the active dungeon
 		Dungeon.activeDungeon = self
 
 	def render(self, surface: Surface) -> None:
@@ -126,7 +188,7 @@ class Dungeon:
 
 
 
-# Display
+# Define the main game object
 class Instance:
 	def __init__(self) -> None:
 		self._running = True
@@ -196,14 +258,15 @@ if __name__ == "__main__":
 	MarchIntoTheDark = Instance()
 	pygame.time.Clock().tick(30)
 
-	BasicType = RoomType("Basic", (200, 200, 200), 1)
-	FloodedType = RoomType("Flooded", (0, 0, 200), 0.1)
-	PoisonedType = RoomType("Poisoned", (0, 200, 0), 0.1)
-	DarkType = RoomType("Dark", (127, 127, 127), 0.2)
-	
-	EmptyType = RoomType("Empty", (100, 0, 0))
 	EntranceType = RoomType("Entrance", (200, 200, 0))
+	BasicType = RoomType("Basic", (200, 200, 200))
 
-	A = Dungeon(100)
+	LibraryType = RoomType("Library", (0, 200, 0), 1)
+	PlanetariumType = RoomType("Planetarium", (0, 200, 200), 1)
+	LabType = RoomType("Lab", (200, 0, 0), 1)
+	GreenhouseType = RoomType("Greenhouse", (200, 0, 200), 1)
+	
+
+	A = Dungeon(30)
 
 	MarchIntoTheDark.on_execute()
