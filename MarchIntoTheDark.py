@@ -1,12 +1,12 @@
 # Imports
 from __future__ import annotations
-from typing import Dict, List, Tuple
+from typing import Callable, Dict, List, Tuple
 
 import pygame
 from pygame.event import Event
 from pygame.surface import Surface
 
-from random import choice, choices, shuffle
+from random import choice, choices, randint, shuffle
 
 # Define types
 Color = Tuple[int, int, int] | Tuple[int, int, int, int]
@@ -31,35 +31,45 @@ class RoomType:
 	"""
 	The RoomType class define a specific type of room.
 	"""
-	listAll: Dict[str, RoomType] = {}
-	weights: Dict[RoomType, float] = {}
+	_listAll: Dict[str, RoomType] = {}
+	_listSpecial: Dict[str, RoomType] = {}
+	_weights: Dict[RoomType, Callable[..., float]] = {}
 
 	basicType: RoomType
 
-	def __init__(self, name: str, color: Color, weight: float = 0) -> None:
+	def __init__(self, name: str, color: Color, special: bool = False) -> None:
 		self.name = name
 		self.color = color
 
-		RoomType.listAll[name] = self
-		RoomType.weights[self] = weight
+		RoomType._listAll[name] = self
+		if special:
+			RoomType._listSpecial[name] = self
 
 	@classmethod
 	def getType(cls, name: str) -> RoomType:
 		"""
 		Return the RoomType with the given name.
 		"""
-		return cls.listAll[name]
+		return cls._listAll[name]
 
 	@classmethod
-	def getRandomType(cls) -> RoomType:
+	def addWeight(cls, roomType: str, weight: Callable[..., float]) -> None:
 		"""
-		Return a random room type.
+		Add a weight to the given room type.
 		"""
-		# Obtain a random room type
-		typeList = list(cls.listAll.values())
-		weightList = [cls.weights[t] for t in typeList]
+		cls._weights[cls.getType(roomType)] = weight
 
-		return choices(typeList, weightList)[0]
+	@classmethod
+	def getRandomType(cls, distance: int, numberOcc: Dict[RoomType, int], size: int) -> RoomType:
+		"""
+		Return a random room type, with the given number of neighbors, distance, and number of occurrences.
+		"""
+		# Get the weights of each room type
+		weights = {t: cls._weights[t](t, distance, numberOcc, size) for t in cls._listSpecial.values()}
+
+		# Return a random room type, weighted by the weights
+		return choices(list(weights.keys()), list(weights.values()), k=1)[0]
+
 
 class Room:
 	"""
@@ -79,6 +89,7 @@ class Room:
 		self.x, self.y = pos
 
 		self.neighborCount = 0
+		self.distanceFromEntrance = 0
 
 		# Add the room to the list of all rooms
 		Room.listAll.append(self)
@@ -89,10 +100,10 @@ class Room:
 		"""
 		# If the room is the current room, render the current room symbol
 		if self.x == 0 and self.y == 0:
-			pygame.draw.rect(surface, (255, 0, 0), (surface.get_width() // 2 + 30 * self.x - 10, surface.get_height() // 2 + 30 * self.y - 10, 30, 30), 0)
+			pygame.draw.rect(surface, (127, 127, 127), (surface.get_width() // 2 + 30 * self.x - 15, surface.get_height() // 2 + 30 * self.y - 15, 30, 30), 0)
 
 		# Draw the room at its position, with the given color
-		pygame.draw.rect(surface, self.type.color, (surface.get_width() // 2 + 30 * self.x - 5, surface.get_height() // 2 + 30 * self.y - 5, 20, 20), 0)
+		pygame.draw.rect(surface, self.type.color, (surface.get_width() // 2 + 30 * self.x - 10, surface.get_height() // 2 + 30 * self.y - 10, 20, 20), 0)
 
 	@staticmethod
 	def basicRoom(x: int, y: int) -> Room:
@@ -117,12 +128,16 @@ class Dungeon:
 		"""
 		# Create the dungeon
 		self.rooms: Dict[Tuple[int, int], Room] = {}
+		self.roomTypes: Dict[RoomType, int] = {}
 
 		# Add the entrance
 		self.rooms[0, 0] = Room.basicRoom(0, 0)
 
-		# Special case for the entrance
-		for direction in range(4):
+		# Special case for the entrance, forces 2 to 4 neighbors
+		directions = [0, 1, 2, 3]
+		shuffle(directions)
+		baseRooms = randint(2, 4)
+		for direction in directions[:baseRooms]:
 			# Convert the direction to a vector
 			vX, vY = dirNumToVector(direction)
 
@@ -130,17 +145,18 @@ class Dungeon:
 			newRoom = Room.basicRoom(vX, vY)
 			self.rooms[vX, vY] = newRoom
 
-			# Set its neighbor count
+			# Set its neighbor count, and distance from the entrance
 			newRoom.neighborCount = 1
+			newRoom.distanceFromEntrance = 1
 
 		# Set the number of neighbors of the entrance
-		self.rooms[0, 0].neighborCount = 4
+		self.rooms[0, 0].neighborCount = baseRooms
 
-		# While the dungeon is not full, or the pity is not too high
-		i = 0
+		# While the dungeon is not full
+		i = baseRooms
 		while i < size:
-			# Get a random room
-			baseRoom = choice(list(self.rooms.values()))
+			# Get a random room, apart from the entrance
+			baseRoom = choice(list(self.rooms.values())[1:])
 
 			# Get a list of all the possible directions, and shuffle it
 			directionList = list(range(4))
@@ -153,8 +169,7 @@ class Dungeon:
 				nX, nY = baseRoom.x + vX, baseRoom.y + vY
 
 				# Obtain the list of neighbors the new room would have
-				neighbors = [self.rooms.get((nX + x, nY + y)) for x, y in (dirNumToVector(d) for d in range(4))]
-				neighbors = [n for n in neighbors if n]
+				neighbors = [self.rooms[nX + x, nY + y] for x, y in (dirNumToVector(d) for d in range(4)) if (nX + x, nY + y) in self.rooms]
 
 				# If there would only be one neighbor, and the new room is not already in the dungeon, add it
 				if len(neighbors) == 1 and (nX, nY) not in self.rooms:
@@ -162,24 +177,41 @@ class Dungeon:
 					newRoom = Room.basicRoom(nX, nY)
 					self.rooms[nX, nY] = newRoom
 
-					# Set its neighbor count
+					# Set its neighbor count, and distance from the entrance
 					newRoom.neighborCount = 1
+					newRoom.distanceFromEntrance = min([r.distanceFromEntrance for r in neighbors]) + 1
 
 					for room in neighbors:
 						# Increase the neighbor count of the neighbor
 						room.neighborCount += 1
 
-					# Increment the number of rooms generated, and break the loop
+					# Increment the number of rooms generated, and break the for loop
 					i += 1
 					break
 		
 		# Set up the central room as the entrance
 		self.rooms[0, 0].type = RoomType.getType("Entrance")
 
-		# Generate the special rooms
-		for room in [r for r in self.rooms.values() if r.neighborCount == 1]:
-			# Set the room type to a random room type
-			room.type = RoomType.getRandomType()
+		# Search for all the dead ends
+		deadEnds = [r for r in self.rooms.values() if r.neighborCount == 1]
+		# Sort them by distance from the entrance
+		deadEnds.sort(key = lambda r: r.distanceFromEntrance)
+
+		# Take the furthest dead end, and set it as the stairs
+		deadEnds[-1].type = RoomType.getType("Stairs")
+		# Take it out of the list
+		del deadEnds[-1]
+
+		shuffle(deadEnds)
+		# For each remaing dead end
+		for room in deadEnds:
+			# Get a random room type
+			newType = RoomType.getRandomType(room.distanceFromEntrance, self.roomTypes, size)
+
+			# Assign it to the room
+			room.type = newType
+			# Increase the count of the room type
+			self.roomTypes[newType] = self.roomTypes.get(newType, 0) + 1
 
 		# Define this dungeon as the active dungeon
 		Dungeon.activeDungeon = self
@@ -268,20 +300,30 @@ if __name__ == "__main__":
 	pygame.time.Clock().tick(30)
 
 	# Define unique room types
-	EntranceType = RoomType("Entrance", (255, 255, 0))
+	RoomType("Entrance", (255, 255, 0))
+	RoomType("Stairs", (255, 0, 0))
 
 	# Define the basic room type
-	BasicType = RoomType("Basic", (255, 255, 255), 3)
-	RoomType.basicType = BasicType
+	RoomType.basicType = RoomType("Basic", (255, 255, 255))
 
 	# Define the special room types
-	LibraryType = RoomType("Library", (0, 200, 0), 1)
-	PlanetariumType = RoomType("Planetarium", (0, 200, 200), 1)
-	LabType = RoomType("Lab", (200, 0, 0), 1)
-	GreenhouseType = RoomType("Greenhouse", (200, 0, 200), 1)
+	RoomType("Greenhouse", (0, 255, 0), True)
+	RoomType.addWeight("Greenhouse", lambda *_: 1)
+
+	RoomType("Treasury", (0, 0, 255), True)
+	RoomType.addWeight("Treasury", lambda *_: 0.5)
+
+	RoomType("Library", (0, 255, 255), True)
+	RoomType.addWeight("Library", lambda *_: 1)
+
+	RoomType("Temple", (255, 0, 255), True)
+	RoomType.addWeight("Temple", lambda *_: 1)
 	
 	# Create the dungeon
-	A = Dungeon(100)
+	A = Dungeon(300)
+
+	# Log the respective number of rooms of each type
+	print([(t.name, n) for t, n in A.roomTypes.items()])
 
 	# Run the game
 	MarchIntoTheDark.on_execute()
