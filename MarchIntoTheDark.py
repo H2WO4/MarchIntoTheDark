@@ -279,7 +279,7 @@ class Instance:
 		pygame.quit()
 
 	def on_execute(self) -> None:
-		if self.on_init() == False:
+		if self.on_init() is False:
 			self._running = False
 
 		while (self._running):
