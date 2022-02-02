@@ -93,7 +93,7 @@ class Room:
 
 		# Add the room to the list of all rooms
 		Room.listAll.append(self)
-	
+
 	def render(self, surface: Surface) -> None:
 		"""
 		Render the room on the given surface.
@@ -188,7 +188,7 @@ class Dungeon:
 					# Increment the number of rooms generated, and break the for loop
 					i += 1
 					break
-		
+
 		# Set up the central room as the entrance
 		self.rooms[0, 0].type = RoomType.getType("Entrance")
 
@@ -243,24 +243,24 @@ class Instance:
 		match event.type:
 			case pygame.QUIT:
 				self._running = False
-			
+
 			case pygame.KEYDOWN:
 				match event.key:
 					case pygame.K_ESCAPE:
 						self._running = False
-					
+
 					case pygame.K_UP:
 						for room in Room.listAll:
 							room.y += 1
-					
+
 					case pygame.K_DOWN:
 						for room in Room.listAll:
 							room.y -= 1
-					
+
 					case pygame.K_LEFT:
 						for room in Room.listAll:
 							room.x += 1
-					
+
 					case pygame.K_RIGHT:
 						for room in Room.listAll:
 							room.x -= 1
@@ -272,7 +272,7 @@ class Instance:
 		self._display_surf.fill((0, 0, 0))
 
 		Dungeon.activeDungeon.render(self._display_surf)
-		
+
 		pygame.display.update()
 
 	def on_cleanup(self) -> None:
@@ -318,7 +318,7 @@ if __name__ == "__main__":
 
 	RoomType("Temple", (255, 0, 255), True)
 	RoomType.addWeight("Temple", lambda *_: 1)
-	
+
 	# Create the dungeon
 	A = Dungeon(300)
 
